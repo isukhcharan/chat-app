@@ -3,7 +3,7 @@
   height: 100%;
 }
 
-.textboxcontainer {
+.text-box-container {
   position: absolute;
   bottom: 0;
   left: 0;
@@ -17,7 +17,7 @@
   background-color: var(--color-background);
 }
 
-.textboxcontainer input {
+.text-box-container input {
   width: 100%;
   padding: 12px;
   outline: none;
@@ -28,7 +28,7 @@
   border: none;
 }
 
-.textboxcontainer button {
+.text-box-container button {
   padding: 8px 12px;
   border: none;
   cursor: pointer;
@@ -39,20 +39,20 @@ input:disabled {
   cursor: not-allowed;
 }
 
-.textboxcontainer button:disabled {
+.text-box-container button:disabled {
   cursor: not-allowed;
   pointer-events: all !important;
 }
 
 
-.messagecontainer {
+.message-container {
   width: 100%;
   height: calc(100vh - 160px);
   overflow-y: auto;
   padding: 1.2rem;
 }
 
-.messageboxcontainer {
+.message-box-container {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;

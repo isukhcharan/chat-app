@@ -2,7 +2,6 @@ import React, { useEffect, useState } from "react";
 import { Outlet } from "react-router-dom";
 import "./Layout.css";
 
-// Get preffered color scheme
 const getPreferredScheme = () =>
   window?.matchMedia?.("(prefers-color-scheme:dark)")?.matches
     ? "dark"
@@ -27,10 +26,7 @@ export default function Layout() {
     } else {
       document.body.classList.remove("dark");
     }
-    // document.documentElement.style.display = "none";
     document.documentElement.setAttribute("data-color-scheme", theme);
-    // document.body.clientWidth;
-    // document.documentElement.style.display = "";
     localStorage.setItem("theme", theme);
     return () => {};
   }, [theme]);
@@ -51,7 +47,7 @@ export default function Layout() {
           <div className="nav-link-container">
             <button onClick={changeTheme} className="theme-button">
               <span className="material-symbols-outlined">
-                {theme == "light" ? "dark_mode" : "light_mode"}
+                {theme === "light" ? "dark_mode" : "light_mode"}
               </span>
             </button>
           </div>

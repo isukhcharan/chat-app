@@ -39,6 +39,7 @@ export default function Chat() {
         connected_to: socket.id,
         is_connected: true,
       });
+      setMessages([]);
       setWaiting(false);
       setIsConnected(true);
     }
@@ -59,17 +60,20 @@ export default function Chat() {
   function onConnect() {
     setIsConnected(true);
     if (socket.id) {
+      setSocketId(socket.id);
       connectWithUser(socket.id);
     }
   }
 
   function onDisconnect() {
-    setUser((previousValue) => null);
+    setUser(null);
     setIsConnected(false);
   }
 
   useEffect(() => {
-    if (socket.id) {
+    if(!socket.id){
+      socket.connect();
+      setIsConnected(true);
       setSocketId(socket.id);
     }
     socket.on("connect", onConnect);
@@ -96,6 +100,7 @@ export default function Chat() {
       if (!value.trim()) {
         return;
       }
+      
       let message: Message = {
         id: Math.random().toString(),
         message: value.trim(),
@@ -103,6 +108,7 @@ export default function Chat() {
         to: user.id,
         timestamp: Date.now(),
       };
+
       setMessages((previousMessages) => [...previousMessages, message]);
       inputElement.value = "";
       setTimeout(() => {
@@ -142,12 +148,12 @@ export default function Chat() {
         </div>
       )}
       <form autoComplete="off" onSubmit={onSubmit}>
-        <div className="messagecontainer">
+        <div className="message-container">
           {isWaiting ? (
             <Waiting />
           ) : (
             <>
-              <div className="messageboxcontainer">
+              <div className="message-box-container">
                 {messages.map((m) => (
                   <div
                     key={m.id}
@@ -169,7 +175,7 @@ export default function Chat() {
           )}
         </div>
 
-        <div className="textboxcontainer">
+        <div className="text-box-container">
           <input
             placeholder="Type here"
             name="message"
