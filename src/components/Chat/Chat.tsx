@@ -71,7 +71,7 @@ export default function Chat() {
   }
 
   useEffect(() => {
-    if(!socket.id){
+    if (!socket.id) {
       socket.connect();
       setIsConnected(true);
       setSocketId(socket.id);
@@ -100,7 +100,7 @@ export default function Chat() {
       if (!value.trim()) {
         return;
       }
-      
+
       let message: Message = {
         id: Math.random().toString(),
         message: value.trim(),
@@ -184,14 +184,14 @@ export default function Chat() {
             disabled={isWaiting}
           />
 
-          <button disabled={isWaiting} className="submitButton" type="submit">
+          <button disabled={isWaiting} className="btn btn-green" type="submit">
             <span className="material-symbols-outlined">send</span>
           </button>
 
           {isConnected ? (
             <button
               onClick={disconnectUser}
-              className="disconnectButton"
+              className="btn btn-red"
               type="button"
               disabled={isWaiting}
             >
@@ -200,7 +200,7 @@ export default function Chat() {
           ) : (
             <button
               onClick={startNewChat}
-              className="startNewChat"
+              className="btn btn-blue"
               type="button"
               disabled={isWaiting}
             >

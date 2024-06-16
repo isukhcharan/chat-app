@@ -1,6 +1,7 @@
 import React from "react";
 import "./Home.css";
 import { Link } from "react-router-dom";
+import Login from "../Login/Login";
 
 export default function Home() {
   return (
@@ -16,10 +17,25 @@ export default function Home() {
           chatting experience. Dive into engaging discussions, explore different
           cultures, and broaden your horizons – one chat at a time.
         </p>
-        <button className="start-chat">
-          <Link to="/chat">Start Chat</Link>
+        <Link className="btn btn-icon btn-green start-chat" to="/chat">
+          <span className="material-symbols-outlined">shuffle</span>
+          <span>Random Chat</span>
+        </Link>
+      </div>
+
+      <div className="or"></div>
+
+      <div className="login-signup">
+        <Login/>
+
+        <div className="text-bold p-1">OR</div>
+
+        <button className="btn btn-blue" type="button">
+          Create Account
         </button>
       </div>
+
+      {/* <Footer /> */}
     </div>
   );
 }

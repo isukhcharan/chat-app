@@ -1,0 +1,54 @@
+.navbar {
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 5rem;
+    /* border-bottom: 1px solid var(--incoming-chat-background-color); */
+}
+
+.navbar>a {
+    text-decoration: none;
+    font-style: bold;
+}
+
+.home-link {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.home-link span {
+    margin-left: 0.5rem;
+    color: var(--color-foreground);
+}
+
+.nav-link-container {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+}
+
+.nav-link-container>a {
+    margin: 1rem;
+}
+
+.theme-button {
+    color: var(--color-foreground);
+    background-color: transparent;
+    border: none;
+    outline: none;
+    cursor: pointer;
+    transition: all 1s;
+}
+
+.theme-button:hover {
+    transform: rotate(90deg);
+}
+
+
+@media only screen and (max-width: 768px) {
+    .navbar {
+        padding: 0 2rem;
+    }
+}

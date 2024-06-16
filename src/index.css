@@ -54,6 +54,8 @@ body.dark {
   --color-blue: #3199fe;
 }
 
+
+/* COMMON CSS */
 img,
 video {
   filter: grayscale(var(--image-grayscale)) opacity(var(--image-opacity));
@@ -61,6 +63,140 @@ video {
 
 .text-center {
   text-align: center;
+}
+
+.w-100 {
+  width: 100%;
+}
+
+.text-bold {
+  font-weight: bold;
+}
+
+/* PADDING */
+.p-1 {
+  padding: 1rem;
+}
+
+.p-3 {
+  padding: 3rem;
+}
+
+.pb-3 {
+  padding-bottom: 3rem;
+}
+
+/* MARGIN */
+.m-3 {
+  margin: 3rem;
+}
+
+.mb-3 {
+  margin-bottom: 3rem;
+}
+
+
+/* FLEX CSS */
+.d-flex {
+  display: flex;
+}
+
+.flex-column {
+  flex-direction: column;
+}
+
+.justify-content-center {
+  justify-content: center;
+}
+
+.justify-content-around {
+  justify-content: space-around;
+}
+
+.justify-content-evenly {
+  justify-content: space-evenly;
+}
+
+.justify-content-between {
+  justify-content: space-between;
+}
+
+.align-items-center {
+  align-items: center;
+}
+
+.align-items-start {
+  align-items: flex-start;
+}
+
+.align-items-end {
+  align-items: flex-end;
+}
+
+
+/* INPUT */
+input {
+  width: 100%;
+  padding: 14px 20px;
+  outline: none;
+  font-size: 17px;
+  border-radius: 10px;
+  background-color: var(--incoming-chat-background-color);
+  color: var(--incoming-chat-foreground-color);
+  border: none;
+  transition: all 400ms ease-in-out;
+}
+
+/* input:hover {
+  transform: scale(1.05) perspective(1px);
+} */
+
+input:disabled {
+  cursor: not-allowed;
+}
+
+
+/* BUTTON */
+button:disabled {
+  cursor: not-allowed;
+  pointer-events: all !important;
+}
+
+.btn {
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  padding: 12px 20px;
+  font-size: 1rem;
+  transition: all 300ms ease-in-out;
+}
+
+.btn:hover {
+  transform: scale(1.1) perspective(1px);
+}
+
+.btn-green {
+  background-color: var(--sent-chat-background-color);
+  color: white;
+}
+
+.btn-red {
+  background-color: var(--color-danger);
+  color: white;
+}
+
+.btn-blue {
+  background-color: var(--color-blue);
+  color: white;
+}
+
+.btn-icon {
+  display: flex;
+  align-items: center;
+}
+
+.btn-icon>span {
+  margin-left: 3px;
 }
 
 .material-symbols-outlined {
@@ -72,24 +208,21 @@ video {
 }
 
 
-/* width */
+/* SCROLLBAR CUSTOM CSS */
 ::-webkit-scrollbar {
   width: 2px;
 }
 
-/* Track */
 ::-webkit-scrollbar-track {
   background: var(--color-background);
   border-radius: 2px;
 }
 
-/* Handle */
 ::-webkit-scrollbar-thumb {
   background: var(--color-background);
   border-radius: 2px;
 }
 
-/* Handle on hover */
 ::-webkit-scrollbar-thumb:hover {
   background: orange;
 }

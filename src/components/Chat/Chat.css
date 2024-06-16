@@ -19,31 +19,12 @@
 
 .text-box-container input {
   width: 100%;
-  padding: 12px;
-  outline: none;
-  font-size: 17px;
-  border-radius: 10px;
-  background-color: var(--incoming-chat-background-color);
-  color: var(--incoming-chat-foreground-color);
-  border: none;
 }
 
-.text-box-container button {
-  padding: 8px 12px;
-  border: none;
-  cursor: pointer;
-  margin-left: 0.5rem;
+.text-box-container .btn {
+  margin-left: 0.5rem !important;
+  padding: 10px 12px !important;
 }
-
-input:disabled {
-  cursor: not-allowed;
-}
-
-.text-box-container button:disabled {
-  cursor: not-allowed;
-  pointer-events: all !important;
-}
-
 
 .message-container {
   width: 100%;
@@ -105,24 +86,6 @@ input:disabled {
   border: none;
   background-color: var(--incoming-chat-background-color);
   color: var(--incoming-chat-foreground-color);
-}
-
-.submitButton {
-  background-color: var(--sent-chat-background-color);
-  color: white;
-  border-radius: 10px;
-}
-
-.disconnectButton {
-  background-color: var(--color-danger);
-  color: white;
-  border-radius: 10px;
-}
-
-.startNewChat {
-  background-color: var(--color-blue);
-  color: white;
-  border-radius: 10px;
 }
 
 .connection {
