@@ -1,21 +1,51 @@
-import React, { useEffect, useState } from "react";
-import "./App.css";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
-import Layout from "./components/Layout/Layout";
-import Chat from "./components/Chat/Chat";
-import Home from "./components/Home/Home";
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from '@/contexts/AuthContext';
+import { SocketProvider } from '@/contexts/SocketContext';
+import AuthPage from '@/components/auth/AuthPage';
+import ChatPage from '@/pages/ChatPage';
 
-function App() {
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  return user ? <>{children}</> : <Navigate to="/auth" replace />;
+}
+
+function PublicRoute({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  return user ? <Navigate to="/" replace /> : <>{children}</>;
+}
+
+function AppRoutes() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Layout />}>
-          <Route index element={<Home />} />
-          <Route path="chat" element={<Chat />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+    <Routes>
+      <Route
+        path="/auth"
+        element={
+          <PublicRoute>
+            <AuthPage />
+          </PublicRoute>
+        }
+      />
+      <Route
+        path="/"
+        element={
+          <ProtectedRoute>
+            <SocketProvider>
+              <ChatPage />
+            </SocketProvider>
+          </ProtectedRoute>
+        }
+      />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <AppRoutes />
+      </AuthProvider>
+    </BrowserRouter>
+  );
+}
