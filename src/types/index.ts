@@ -4,7 +4,7 @@ export type MemberRole = 'OWNER' | 'ADMIN' | 'MEMBER';
 
 export interface User {
   id: string;
-  email: string;
+  email?: string;
   username: string;
   displayName: string;
   avatarUrl?: string;
@@ -52,6 +52,17 @@ export interface Message {
   user: MessageUser;
   reactions: Reaction[];
   _count: { replies: number };
+  _pending?: boolean; // optimistic flag
+}
+
+export interface DirectMessage {
+  id: string;
+  content: string;
+  createdAt: string;
+  isRead: boolean;
+  senderId: string;
+  receiverId: string;
+  sender: MessageUser;
 }
 
 export interface TypingUser {

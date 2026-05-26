@@ -1,46 +1,44 @@
 import { useState, useEffect } from 'react';
 import { Hash } from 'lucide-react';
 import api from '@/lib/api';
-import { getSocket } from '@/lib/socket';
-import { Channel, UserStatus } from '@/types';
+import { Channel, User } from '@/types';
 import Sidebar from '@/components/layout/Sidebar';
 import ChannelView from '@/components/layout/ChannelView';
+import DMView from '@/components/layout/DMView';
+
+type View = { type: 'channel'; channel: Channel } | { type: 'dm'; user: User } | null;
 
 export default function ChatPage() {
   const [channels, setChannels] = useState<Channel[]>([]);
-  const [activeChannel, setActiveChannel] = useState<Channel | null>(null);
-  const [onlineUsers, setOnlineUsers] = useState<Record<string, UserStatus>>({});
+  const [view, setView] = useState<View>(null);
 
   useEffect(() => {
     api.get('/channels').then((data: any) => {
       const list = data || [];
       setChannels(list);
-      if (list.length > 0 && !activeChannel) setActiveChannel(list[0]);
+      if (list.length > 0) setView({ type: 'channel', channel: list[0] });
     }).catch(() => {});
-
-    const socket = getSocket();
-    socket.on('user:status', ({ userId, status }: { userId: string; status: UserStatus }) => {
-      setOnlineUsers((prev) => ({ ...prev, [userId]: status }));
-    });
-
-    return () => {
-      socket.off('user:status');
-    };
   }, []);
+
+  const activeChannelId = view?.type === 'channel' ? view.channel.id : null;
+  const activeDMUserId = view?.type === 'dm' ? view.user.id : null;
 
   return (
     <div className="flex h-screen bg-base-950 overflow-hidden">
       <Sidebar
         channels={channels}
-        activeChannelId={activeChannel?.id ?? null}
-        onSelectChannel={setActiveChannel}
+        activeChannelId={activeChannelId}
+        activeDMUserId={activeDMUserId}
+        onSelectChannel={(ch) => setView({ type: 'channel', channel: ch })}
+        onSelectDM={(u) => setView({ type: 'dm', user: u })}
         onChannelsUpdate={setChannels}
-        onlineUsers={onlineUsers}
       />
 
       <main className="flex-1 flex overflow-hidden">
-        {activeChannel ? (
-          <ChannelView key={activeChannel.id} channel={activeChannel} />
+        {view?.type === 'channel' ? (
+          <ChannelView key={view.channel.id} channel={view.channel} />
+        ) : view?.type === 'dm' ? (
+          <DMView key={view.user.id} partner={view.user} />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center gap-3 text-text-muted">
             <Hash className="w-12 h-12 opacity-20" />

@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Hash, Plus, LogOut, Zap, ChevronDown, Lock, Loader2 } from 'lucide-react';
+import { Hash, Plus, LogOut, Zap, ChevronDown, Lock, Loader2, MessageCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
-import { useSocket } from '@/contexts/SocketContext';
+import { getSocket } from '@/lib/socket';
 import Avatar from '@/components/shared/Avatar';
 import api from '@/lib/api';
 import { Channel, User, UserStatus } from '@/types';
@@ -10,37 +10,55 @@ import { Channel, User, UserStatus } from '@/types';
 interface SidebarProps {
   channels: Channel[];
   activeChannelId: string | null;
+  activeDMUserId: string | null;
   onSelectChannel: (channel: Channel) => void;
+  onSelectDM: (user: User) => void;
   onChannelsUpdate: (channels: Channel[]) => void;
-  onlineUsers: Record<string, UserStatus>;
 }
 
 export default function Sidebar({
   channels,
   activeChannelId,
+  activeDMUserId,
   onSelectChannel,
+  onSelectDM,
   onChannelsUpdate,
-  onlineUsers,
 }: SidebarProps) {
   const { user, logout } = useAuth();
-  const socket = useSocket();
+  const socket = getSocket();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newChannelName, setNewChannelName] = useState('');
   const [creating, setCreating] = useState(false);
   const [members, setMembers] = useState<User[]>([]);
+  const [onlineStatus, setOnlineStatus] = useState<Record<string, UserStatus>>({});
   const [showMembers, setShowMembers] = useState(true);
 
   useEffect(() => {
-    api.get('/users').then((data: any) => setMembers(data)).catch(() => {});
+    api.get('/users').then((data: any) => {
+      setMembers(data || []);
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
-    if (!socket) return;
-    const handler = ({ userId, status }: { userId: string; status: UserStatus }) => {
-      setMembers((prev) => prev.map((m) => m.id === userId ? { ...m, status } : m));
+    const onStatus = ({ userId, status }: { userId: string; status: UserStatus }) => {
+      setOnlineStatus((prev) => ({ ...prev, [userId]: status }));
     };
-    socket.on('user:status', handler);
-    return () => { socket.off('user:status', handler); };
+
+    const onConnected = (newUser: { id: string; username: string; displayName: string; status: UserStatus }) => {
+      setOnlineStatus((prev) => ({ ...prev, [newUser.id]: 'ONLINE' }));
+      // Add to members list if not already there
+      setMembers((prev) => {
+        if (prev.some((m) => m.id === newUser.id)) return prev;
+        return [...prev, { ...newUser, status: 'ONLINE' }];
+      });
+    };
+
+    socket.on('user:status', onStatus);
+    socket.on('user:connected', onConnected);
+    return () => {
+      socket.off('user:status', onStatus);
+      socket.off('user:connected', onConnected);
+    };
   }, [socket]);
 
   const handleCreateChannel = useCallback(async () => {
@@ -56,8 +74,11 @@ export default function Sidebar({
     setCreating(false);
   }, [newChannelName, channels, onChannelsUpdate, onSelectChannel]);
 
-  const onlineMembers = members.filter((m) => m.id !== user?.id && (onlineUsers[m.id] === 'ONLINE' || m.status === 'ONLINE'));
-  const otherMembers = members.filter((m) => m.id !== user?.id && onlineUsers[m.id] !== 'ONLINE' && m.status !== 'ONLINE');
+  const getStatus = (m: User): UserStatus => onlineStatus[m.id] ?? m.status;
+
+  const otherMembers = members.filter((m) => m.id !== user?.id);
+  const onlineMembers = otherMembers.filter((m) => getStatus(m) === 'ONLINE');
+  const offlineMembers = otherMembers.filter((m) => getStatus(m) !== 'ONLINE');
 
   return (
     <aside className="w-60 flex-shrink-0 bg-base-900 border-r border-border flex flex-col h-full">
@@ -72,9 +93,9 @@ export default function Sidebar({
         <ChevronDown className="w-3.5 h-3.5 text-text-muted" />
       </div>
 
-      <div className="flex-1 overflow-y-auto py-2 space-y-1">
+      <div className="flex-1 overflow-y-auto py-2">
         {/* Channels section */}
-        <div className="px-3 py-1">
+        <div className="px-3 py-1 mb-2">
           <div className="flex items-center justify-between mb-1">
             <span className="text-[11px] font-semibold text-text-muted uppercase tracking-wider">Channels</span>
             <button
@@ -90,7 +111,7 @@ export default function Sidebar({
               <button
                 key={ch.id}
                 onClick={() => onSelectChannel(ch)}
-                className={cn('channel-item w-full', activeChannelId === ch.id && 'active')}
+                className={cn('channel-item w-full', activeChannelId === ch.id && !activeDMUserId && 'active')}
               >
                 {ch.type === 'PRIVATE' ? (
                   <Lock className="w-3.5 h-3.5 flex-shrink-0" />
@@ -103,35 +124,55 @@ export default function Sidebar({
           </div>
         </div>
 
-        {/* Members section */}
+        {/* Divider */}
+        <div className="mx-3 border-t border-border mb-2" />
+
+        {/* Direct Messages section */}
         <div className="px-3 py-1">
           <button
             onClick={() => setShowMembers((s) => !s)}
-            className="flex items-center justify-between w-full mb-1 group"
+            className="flex items-center justify-between w-full mb-1"
           >
-            <span className="text-[11px] font-semibold text-text-muted uppercase tracking-wider">Members</span>
-            <ChevronDown
-              className={cn(
-                'w-3 h-3 text-text-muted transition-transform',
-                !showMembers && '-rotate-90',
-              )}
-            />
+            <span className="text-[11px] font-semibold text-text-muted uppercase tracking-wider">Direct Messages</span>
+            <ChevronDown className={cn('w-3 h-3 text-text-muted transition-transform', !showMembers && '-rotate-90')} />
           </button>
 
           {showMembers && (
             <div className="space-y-0.5">
               {onlineMembers.map((m) => (
-                <div key={m.id} className="flex items-center gap-2 px-1 py-1 rounded hover:bg-white/5">
+                <button
+                  key={m.id}
+                  onClick={() => onSelectDM(m)}
+                  className={cn(
+                    'w-full flex items-center gap-2 px-1.5 py-1.5 rounded transition-colors',
+                    activeDMUserId === m.id
+                      ? 'bg-indigo-600/20 text-indigo-300'
+                      : 'hover:bg-white/5 text-text-secondary hover:text-text-primary',
+                  )}
+                >
                   <Avatar name={m.displayName} avatarUrl={m.avatarUrl} status="ONLINE" size="xs" />
-                  <span className="text-xs text-text-secondary truncate">{m.displayName}</span>
-                </div>
+                  <span className="text-xs truncate">{m.displayName}</span>
+                  <MessageCircle className="w-3 h-3 ml-auto opacity-0 group-hover:opacity-100 flex-shrink-0" />
+                </button>
               ))}
-              {otherMembers.map((m) => (
-                <div key={m.id} className="flex items-center gap-2 px-1 py-1 rounded">
+              {offlineMembers.map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => onSelectDM(m)}
+                  className={cn(
+                    'w-full flex items-center gap-2 px-1.5 py-1.5 rounded transition-colors',
+                    activeDMUserId === m.id
+                      ? 'bg-indigo-600/20 text-indigo-300'
+                      : 'hover:bg-white/5 text-text-muted hover:text-text-secondary',
+                  )}
+                >
                   <Avatar name={m.displayName} avatarUrl={m.avatarUrl} status="OFFLINE" size="xs" />
-                  <span className="text-xs text-text-muted truncate">{m.displayName}</span>
-                </div>
+                  <span className="text-xs truncate">{m.displayName}</span>
+                </button>
               ))}
+              {otherMembers.length === 0 && (
+                <p className="text-xs text-text-muted px-1.5 py-1">No other members yet</p>
+              )}
             </div>
           )}
         </div>

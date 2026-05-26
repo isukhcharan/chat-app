@@ -4,6 +4,7 @@ import api from '@/lib/api';
 import { getSocket } from '@/lib/socket';
 import { Channel, Message, TypingUser } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
+import { groupReactions } from '@/lib/utils';
 import MessageItem from '@/components/chat/MessageItem';
 import MessageInput from '@/components/chat/MessageInput';
 import TypingIndicator from '@/components/chat/TypingIndicator';
@@ -21,37 +22,48 @@ export default function ChannelView({ channel }: ChannelViewProps) {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [aiThinking, setAiThinking] = useState(false);
   const [threadMessage, setThreadMessage] = useState<Message | null>(null);
+  const [unreadThreadIds, setUnreadThreadIds] = useState<Set<string>>(new Set());
   const bottomRef = useRef<HTMLDivElement>(null);
   const socket = getSocket();
+  // Track pending message IDs so we can replace them on confirm
+  const pendingIds = useRef<Set<string>>(new Set());
 
-  // Load messages
   useEffect(() => {
     setLoading(true);
     setMessages([]);
     setTypingUsers(new Map());
     setSuggestions([]);
+    setUnreadThreadIds(new Set());
 
     api.get(`/channels/${channel.id}/messages`).then((data: any) => {
       setMessages(data || []);
       setLoading(false);
     }).catch(() => setLoading(false));
 
-    // Mark as read
     api.post(`/channels/${channel.id}/read`).catch(() => {});
   }, [channel.id]);
 
-  // Scroll to bottom on new messages
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages.length]);
 
-  // Socket event handlers
   useEffect(() => {
     socket.emit('channel:join', { channelId: channel.id });
 
     const onNewMessage = (msg: Message) => {
       if (msg.channelId !== channel.id) return;
+      if (msg.parentId) return; // thread replies stay in ThreadPanel only
       setMessages((prev) => {
+        // Replace a pending message from the same user with the same content
+        if (!msg.isAI && msg.user.id === user?.id) {
+          const pendingIdx = prev.findIndex((m) => m._pending && m.content === msg.content);
+          if (pendingIdx !== -1) {
+            pendingIds.current.delete(prev[pendingIdx].id);
+            const next = [...prev];
+            next[pendingIdx] = msg;
+            return next;
+          }
+        }
         if (prev.some((m) => m.id === msg.id)) return prev;
         return [...prev, msg];
       });
@@ -76,11 +88,8 @@ export default function ChannelView({ channel }: ChannelViewProps) {
       if (data.channelId !== channel.id || data.userId === user?.id) return;
       setTypingUsers((prev) => {
         const next = new Map(prev);
-        if (data.typing) {
-          next.set(data.userId, data);
-        } else {
-          next.delete(data.userId);
-        }
+        if (data.typing) next.set(data.userId, data);
+        else next.delete(data.userId);
         return next;
       });
     };
@@ -97,7 +106,43 @@ export default function ChannelView({ channel }: ChannelViewProps) {
       if (channelId === channel.id) setAiThinking(false);
     };
 
+    // Replaces both: sender's optimistic (_pending) and receiver's temp (srv-*)
+    const onConfirmed = ({ pendingId, message: msg }: { pendingId: string; message: Message }) => {
+      if (msg.channelId !== channel.id) return;
+      if (msg.parentId) {
+        // Thread reply confirmed — bump parent's reply count in channel view
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === msg.parentId
+              ? { ...m, _count: { ...m._count, replies: m._count.replies + 1 } }
+              : m,
+          ),
+        );
+        // Mark the thread as having unread replies, unless it's currently open
+        setThreadMessage((current) => {
+          if (current?.id !== msg.parentId) {
+            setUnreadThreadIds((prev) => new Set(prev).add(msg.parentId!));
+          }
+          return current;
+        });
+        return;
+      }
+      setMessages((prev) => {
+        const idx = prev.findIndex(
+          (m) => m.id === pendingId || (m._pending && m.content === msg.content && m.user.id === msg.user.id),
+        );
+        if (idx !== -1) {
+          const next = [...prev];
+          next[idx] = msg;
+          return next;
+        }
+        if (prev.some((m) => m.id === msg.id)) return prev;
+        return [...prev, msg];
+      });
+    };
+
     socket.on('message:new', onNewMessage);
+    socket.on('message:confirmed', onConfirmed);
     socket.on('message:updated', onUpdated);
     socket.on('message:deleted', onDeleted);
     socket.on('message:reactions_updated', onReactionsUpdated);
@@ -108,6 +153,7 @@ export default function ChannelView({ channel }: ChannelViewProps) {
 
     return () => {
       socket.off('message:new', onNewMessage);
+      socket.off('message:confirmed', onConfirmed);
       socket.off('message:updated', onUpdated);
       socket.off('message:deleted', onDeleted);
       socket.off('message:reactions_updated', onReactionsUpdated);
@@ -119,20 +165,56 @@ export default function ChannelView({ channel }: ChannelViewProps) {
   }, [channel.id, user?.id]);
 
   const handleSend = useCallback((content: string) => {
+    if (!user) return;
+    // Optimistic update
+    const tempId = `pending-${Date.now()}`;
+    pendingIds.current.add(tempId);
+    const optimistic: Message = {
+      id: tempId,
+      content,
+      isAI: false,
+      createdAt: new Date().toISOString(),
+      channelId: channel.id,
+      user: {
+        id: user.id,
+        username: user.username,
+        displayName: user.displayName,
+        avatarUrl: user.avatarUrl,
+      },
+      reactions: [],
+      _count: { replies: 0 },
+      _pending: true,
+    };
+    setMessages((prev) => [...prev, optimistic]);
     socket.emit('message:send', { channelId: channel.id, content });
-  }, [channel.id]);
+  }, [channel.id, user]);
 
   const handleEdit = useCallback((messageId: string, content: string) => {
     socket.emit('message:edit', { messageId, content });
   }, []);
 
   const handleDelete = useCallback((messageId: string) => {
+    // Optimistic remove
+    setMessages((prev) => prev.filter((m) => m.id !== messageId));
     socket.emit('message:delete', { messageId });
   }, []);
 
   const handleReact = useCallback((messageId: string, emoji: string) => {
+    // Optimistic reaction toggle
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.id !== messageId) return m;
+        const existing = m.reactions.find(
+          (r) => r.emoji === emoji && r.user.id === user?.id,
+        );
+        const reactions = existing
+          ? m.reactions.filter((r) => !(r.emoji === emoji && r.user.id === user?.id))
+          : [...m.reactions, { id: `opt-${Date.now()}`, emoji, user: { id: user!.id, username: user!.username } }];
+        return { ...m, reactions };
+      }),
+    );
     socket.emit('message:react', { messageId, emoji, channelId: channel.id });
-  }, [channel.id]);
+  }, [channel.id, user]);
 
   const handleTypingStart = useCallback(() => {
     socket.emit('typing:start', { channelId: channel.id });
@@ -186,7 +268,15 @@ export default function ChannelView({ channel }: ChannelViewProps) {
                 onReact={handleReact}
                 onEdit={handleEdit}
                 onDelete={handleDelete}
-                onOpenThread={setThreadMessage}
+                onOpenThread={(m) => {
+                  setThreadMessage(m);
+                  setUnreadThreadIds((prev) => {
+                    const next = new Set(prev);
+                    next.delete(m.id);
+                    return next;
+                  });
+                }}
+                hasUnreadReplies={unreadThreadIds.has(msg.id)}
               />
             ))
           )}
