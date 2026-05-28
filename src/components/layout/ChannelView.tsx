@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Hash, Users, Loader2 } from 'lucide-react';
 import api from '@/lib/api';
 import { getSocket } from '@/lib/socket';
-import { Channel, Message, TypingUser } from '@/types';
+import { Attachment, Channel, Message, TypingUser } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { groupReactions } from '@/lib/utils';
 import MessageItem from '@/components/chat/MessageItem';
@@ -164,9 +164,8 @@ export default function ChannelView({ channel }: ChannelViewProps) {
     };
   }, [channel.id, user?.id]);
 
-  const handleSend = useCallback((content: string) => {
+  const handleSend = useCallback((content: string, attachments?: Attachment[]) => {
     if (!user) return;
-    // Optimistic update
     const tempId = `pending-${Date.now()}`;
     pendingIds.current.add(tempId);
     const optimistic: Message = {
@@ -182,11 +181,12 @@ export default function ChannelView({ channel }: ChannelViewProps) {
         avatarUrl: user.avatarUrl,
       },
       reactions: [],
+      attachments: attachments ?? [],
       _count: { replies: 0 },
       _pending: true,
     };
     setMessages((prev) => [...prev, optimistic]);
-    socket.emit('message:send', { channelId: channel.id, content });
+    socket.emit('message:send', { channelId: channel.id, content, attachments: attachments ?? [] });
   }, [channel.id, user]);
 
   const handleEdit = useCallback((messageId: string, content: string) => {
@@ -287,7 +287,7 @@ export default function ChannelView({ channel }: ChannelViewProps) {
 
         <MessageInput
           channelName={channel.name}
-          onSend={handleSend}
+          onSend={(content, attachments) => handleSend(content, attachments)}
           onTypingStart={handleTypingStart}
           onTypingStop={handleTypingStop}
           onRequestSuggestions={handleRequestSuggestions}

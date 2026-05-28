@@ -41,6 +41,13 @@ export interface Reaction {
   user: { id: string; username: string };
 }
 
+export interface Attachment {
+  url: string;
+  name: string;
+  size: number;
+  type: string;
+}
+
 export interface Message {
   id: string;
   content: string;
@@ -51,6 +58,7 @@ export interface Message {
   channelId: string;
   user: MessageUser;
   reactions: Reaction[];
+  attachments?: Attachment[];
   _count: { replies: number };
   _pending?: boolean; // optimistic flag
 }

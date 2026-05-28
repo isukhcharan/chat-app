@@ -1,11 +1,53 @@
 import { useState, useRef, useEffect } from 'react';
-import { Pencil, Trash2, MessageSquare, Bot, Check, X, SmilePlus } from 'lucide-react';
+import { Pencil, Trash2, MessageSquare, Bot, Check, X, SmilePlus, FileText, Download } from 'lucide-react';
 import { cn, formatMessageTime, groupReactions } from '@/lib/utils';
-import { Message } from '@/types';
+import { Message, Attachment } from '@/types';
 import Avatar from '@/components/shared/Avatar';
 import { useAuth } from '@/contexts/AuthContext';
 
 const EMOJI_OPTIONS = ['👍', '❤️', '😂', '🔥', '✅', '👀'];
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function AttachmentItem({ attachment, isOwn }: { attachment: Attachment; isOwn: boolean }) {
+  const isImage = attachment.type.startsWith('image/');
+  const fullUrl = attachment.url.startsWith('http') ? attachment.url : `${API_BASE}${attachment.url}`;
+
+  if (isImage) {
+    return (
+      <a href={fullUrl} target="_blank" rel="noopener noreferrer">
+        <img
+          src={fullUrl}
+          alt={attachment.name}
+          className="max-w-xs max-h-52 rounded-xl object-cover hover:opacity-90 transition-opacity cursor-zoom-in"
+        />
+      </a>
+    );
+  }
+
+  return (
+    <a
+      href={fullUrl}
+      download={attachment.name}
+      className={cn(
+        'flex items-center gap-2.5 border rounded-xl px-3 py-2 hover:border-white/20 transition-colors max-w-xs group',
+        isOwn ? 'bg-indigo-700/60 border-indigo-500/30' : 'bg-base-700 border-border',
+      )}
+    >
+      <FileText className={cn('w-5 h-5 flex-shrink-0', isOwn ? 'text-indigo-200' : 'text-indigo-400')} />
+      <div className="flex-1 min-w-0">
+        <p className={cn('text-xs font-medium truncate', isOwn ? 'text-white' : 'text-text-primary')}>{attachment.name}</p>
+        <p className={cn('text-[10px]', isOwn ? 'text-indigo-200' : 'text-text-muted')}>{formatBytes(attachment.size)}</p>
+      </div>
+      <Download className="w-3.5 h-3.5 text-current opacity-60 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+    </a>
+  );
+}
 
 interface MessageItemProps {
   message: Message;
@@ -51,44 +93,53 @@ export default function MessageItem({
     setEditing(false);
   };
 
-  return (
-    <div
-      className={cn(
-        'group relative px-4 py-1 transition-colors',
-        isAI
-          ? 'bg-cyan-500/5 hover:bg-cyan-500/[0.08] border-l-2 border-cyan-500/30 pl-3'
-          : 'hover:bg-white/[0.025]',
-        isPending && 'opacity-70',
-      )}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => { setHovered(false); setShowEmojiPicker(false); }}
-    >
-      <div className="flex gap-3">
-        {/* Avatar */}
-        <div className="flex-shrink-0 pt-0.5">
-          {isAI ? (
+  // ── AI messages keep the special cyan style ──────────────────────────────
+  if (isAI) {
+    return (
+      <div className="group relative px-4 py-1 bg-cyan-500/5 hover:bg-cyan-500/[0.08] border-l-2 border-cyan-500/30 pl-3 transition-colors">
+        <div className="flex gap-3">
+          <div className="flex-shrink-0 pt-0.5">
             <div className="w-8 h-8 rounded-full bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center">
               <Bot className="w-4 h-4 text-cyan-400" />
             </div>
-          ) : (
-            <Avatar name={message.user.displayName} avatarUrl={message.user.avatarUrl} size="md" />
-          )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-baseline gap-2 mb-1">
+              <span className="text-sm font-semibold text-cyan-400">Nexus AI</span>
+              <span className="text-[10px] text-text-muted">{formatMessageTime(message.createdAt)}</span>
+            </div>
+            <p className="text-sm leading-relaxed whitespace-pre-wrap break-words text-cyan-50/90">{message.content}</p>
+          </div>
         </div>
+      </div>
+    );
+  }
 
-        <div className="flex-1 min-w-0">
-          {/* Header */}
-          <div className="flex items-baseline gap-2 mb-0.5">
-            <span className={cn('text-sm font-semibold', isAI ? 'text-cyan-400' : 'text-text-primary')}>
-              {isAI ? 'Nexus AI' : message.user.displayName}
-            </span>
+  // ── Regular messages: bubble style ───────────────────────────────────────
+  return (
+    <div
+      className={cn('group relative px-4 py-1 transition-colors hover:bg-white/[0.02]', isPending && 'opacity-70')}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => { setHovered(false); setShowEmojiPicker(false); }}
+    >
+      <div className={cn('flex gap-2.5', isOwn && 'flex-row-reverse')}>
+        {/* Avatar — only for other people */}
+        {!isOwn && (
+          <Avatar name={message.user.displayName} avatarUrl={message.user.avatarUrl} size="sm" className="flex-shrink-0 mt-0.5" />
+        )}
+
+        <div className={cn('max-w-[75%]', isOwn && 'flex flex-col items-end')}>
+          {/* Name + time */}
+          <div className={cn('flex items-baseline gap-2 mb-1', isOwn && 'flex-row-reverse')}>
+            <span className="text-xs font-semibold text-text-primary">{message.user.displayName}</span>
             <span className="text-[10px] text-text-muted">{formatMessageTime(message.createdAt)}</span>
             {message.editedAt && <span className="text-[10px] text-text-muted italic">(edited)</span>}
             {isPending && <span className="text-[10px] text-text-muted italic">sending…</span>}
           </div>
 
-          {/* Content / Edit */}
+          {/* Bubble / edit mode */}
           {editing ? (
-            <div className="space-y-2 mt-1">
+            <div className="space-y-2 w-full">
               <textarea
                 ref={editRef}
                 value={editContent}
@@ -111,17 +162,28 @@ export default function MessageItem({
               </div>
             </div>
           ) : (
-            <p className={cn(
-              'text-sm leading-relaxed whitespace-pre-wrap break-words',
-              isAI ? 'text-cyan-50/90' : 'text-text-primary/90',
+            <div className={cn(
+              'px-3.5 py-2 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words',
+              isOwn
+                ? 'bg-indigo-600 text-white rounded-tr-sm'
+                : 'bg-base-800 text-text-primary rounded-tl-sm',
             )}>
               {message.content}
-            </p>
+            </div>
+          )}
+
+          {/* Attachments */}
+          {message.attachments && message.attachments.length > 0 && (
+            <div className={cn('flex flex-col gap-2 mt-1.5', isOwn && 'items-end')}>
+              {message.attachments.map((att, i) => (
+                <AttachmentItem key={i} attachment={att} isOwn={isOwn} />
+              ))}
+            </div>
           )}
 
           {/* Reactions */}
           {grouped.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-1.5">
+            <div className={cn('flex flex-wrap gap-1 mt-1.5', isOwn && 'justify-end')}>
               {grouped.map(({ emoji, users, count }) => (
                 <button
                   key={emoji}
@@ -139,32 +201,31 @@ export default function MessageItem({
             </div>
           )}
 
-          {/* Thread reply count — always visible, clickable */}
+          {/* Thread reply count */}
           {!isThreadReply && message._count.replies > 0 && (
             <button
               onClick={() => onOpenThread(message)}
               className={cn(
                 'mt-1.5 flex items-center gap-1.5 text-xs font-medium transition-colors',
-                hasUnreadReplies
-                  ? 'text-indigo-300 hover:text-indigo-200'
-                  : 'text-indigo-400/70 hover:text-indigo-300',
+                hasUnreadReplies ? 'text-indigo-300 hover:text-indigo-200' : 'text-indigo-400/70 hover:text-indigo-300',
               )}
             >
               <MessageSquare className="w-3.5 h-3.5" />
               {message._count.replies} {message._count.replies === 1 ? 'reply' : 'replies'}
               {hasUnreadReplies && (
-                <span className="bg-indigo-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full leading-none">
-                  NEW
-                </span>
+                <span className="bg-indigo-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full leading-none">NEW</span>
               )}
             </button>
           )}
         </div>
 
-        {/* Hover action toolbar */}
+        {/* Hover toolbar — flips sides for own messages */}
         {hovered && !editing && !isPending && (
-          <div className="absolute right-4 top-0.5 flex items-center gap-0.5 bg-base-800 border border-border rounded-lg p-0.5 shadow-lg animate-fade-in z-10">
-            {/* Emoji */}
+          <div className={cn(
+            'absolute top-0 flex items-center gap-0.5 bg-base-800 border border-border rounded-lg p-0.5 shadow-lg animate-fade-in z-10',
+            isOwn ? 'left-4' : 'right-4',
+          )}>
+            {/* Emoji picker */}
             <div className="relative">
               <button
                 onClick={() => setShowEmojiPicker((s) => !s)}
@@ -174,7 +235,7 @@ export default function MessageItem({
                 <SmilePlus className="w-4 h-4" />
               </button>
               {showEmojiPicker && (
-                <div className="absolute right-0 top-full mt-1 bg-base-800 border border-border rounded-lg p-1.5 flex gap-1 shadow-xl z-20">
+                <div className={cn('absolute top-full mt-1 bg-base-800 border border-border rounded-lg p-1.5 flex gap-1 shadow-xl z-20', isOwn ? 'right-0' : 'left-0')}>
                   {EMOJI_OPTIONS.map((e) => (
                     <button
                       key={e}
@@ -199,8 +260,8 @@ export default function MessageItem({
               </button>
             )}
 
-            {/* Edit — own messages only */}
-            {isOwn && !isAI && (
+            {/* Edit / Delete — own messages only */}
+            {isOwn && (
               <button
                 onClick={() => { setEditing(true); setEditContent(message.content); }}
                 title="Edit message"
@@ -209,9 +270,7 @@ export default function MessageItem({
                 <Pencil className="w-3.5 h-3.5" />
               </button>
             )}
-
-            {/* Delete — own messages only */}
-            {isOwn && !isAI && (
+            {isOwn && (
               <button
                 onClick={() => onDelete(message.id)}
                 title="Delete message"

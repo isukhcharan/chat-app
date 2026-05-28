@@ -205,34 +205,43 @@ export default function ThreadPanel({ parentMessage, channelId, onClose }: Threa
             <p className="text-xs">Be the first to reply</p>
           </div>
         ) : (
-          replies.map((r) => (
-            <div key={r.id} className={cn('flex gap-2.5 px-4', r._pending && 'opacity-60')}>
-              <Avatar name={r.user.displayName} avatarUrl={r.user.avatarUrl} size="sm" className="flex-shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-baseline gap-2 mb-0.5">
-                  <span className="text-xs font-semibold text-text-primary">{r.user.displayName}</span>
-                  <span className="text-[10px] text-text-muted">{formatMessageTime(r.createdAt)}</span>
-                  {r._pending && <span className="text-[10px] text-text-muted italic">sending…</span>}
-                </div>
-                <p className="text-sm text-text-primary/90 leading-relaxed whitespace-pre-wrap break-words">{r.content}</p>
-                {/* Reactions on replies */}
-                {r.reactions.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {Object.entries(
-                      r.reactions.reduce((acc: Record<string, number>, rx) => {
-                        acc[rx.emoji] = (acc[rx.emoji] || 0) + 1;
-                        return acc;
-                      }, {}),
-                    ).map(([emoji, count]) => (
-                      <span key={emoji} className="text-xs bg-white/5 border border-border px-1.5 py-0.5 rounded-full">
-                        {emoji} {count}
-                      </span>
-                    ))}
-                  </div>
+          replies.map((r) => {
+            const isOwn = r.user.id === user?.id;
+            return (
+              <div key={r.id} className={cn('flex gap-2 px-4', isOwn && 'flex-row-reverse', r._pending && 'opacity-60')}>
+                {!isOwn && (
+                  <Avatar name={r.user.displayName} avatarUrl={r.user.avatarUrl} size="sm" className="flex-shrink-0 mt-0.5" />
                 )}
+                <div className={cn('max-w-[78%]', isOwn && 'flex flex-col items-end')}>
+                  <div className={cn('flex items-baseline gap-2 mb-0.5', isOwn && 'flex-row-reverse')}>
+                    <span className="text-xs font-semibold text-text-primary">{r.user.displayName}</span>
+                    <span className="text-[10px] text-text-muted">{formatMessageTime(r.createdAt)}</span>
+                    {r._pending && <span className="text-[10px] text-text-muted italic">sending…</span>}
+                  </div>
+                  <div className={cn(
+                    'px-3 py-2 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words',
+                    isOwn ? 'bg-indigo-600 text-white rounded-tr-sm' : 'bg-base-800 text-text-primary rounded-tl-sm',
+                  )}>
+                    {r.content}
+                  </div>
+                  {r.reactions.length > 0 && (
+                    <div className={cn('flex flex-wrap gap-1 mt-1', isOwn && 'justify-end')}>
+                      {Object.entries(
+                        r.reactions.reduce((acc: Record<string, number>, rx) => {
+                          acc[rx.emoji] = (acc[rx.emoji] || 0) + 1;
+                          return acc;
+                        }, {}),
+                      ).map(([emoji, count]) => (
+                        <span key={emoji} className="text-xs bg-white/5 border border-border px-1.5 py-0.5 rounded-full">
+                          {emoji} {count}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
         <div ref={bottomRef} />
       </div>
