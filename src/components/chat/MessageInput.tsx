@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, KeyboardEvent, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Send, Sparkles, Loader2, Smile, Paperclip, X, FileText, ImageIcon } from 'lucide-react';
 import Picker from '@emoji-mart/react';
 import data from '@emoji-mart/data';
@@ -44,21 +45,41 @@ export default function MessageInput({
 }: MessageInputProps) {
   const [value, setValue] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [pickerPos, setPickerPos] = useState({ top: 0, left: 0 });
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const emojiButtonRef = useRef<HTMLButtonElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
-  // Close emoji picker on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (emojiPickerRef.current && !emojiPickerRef.current.contains(e.target as Node)) {
+      if (
+        emojiPickerRef.current &&
+        !emojiPickerRef.current.contains(e.target as Node) &&
+        !emojiButtonRef.current?.contains(e.target as Node)
+      ) {
         setShowEmojiPicker(false);
       }
     };
     if (showEmojiPicker) document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
+  }, [showEmojiPicker]);
+
+  const openEmojiPicker = useCallback(() => {
+    if (showEmojiPicker) { setShowEmojiPicker(false); return; }
+    if (!emojiButtonRef.current) return;
+    const rect = emojiButtonRef.current.getBoundingClientRect();
+    const pickerW = 352;
+    const pickerH = 440;
+    let left = rect.left;
+    let top = rect.top - pickerH - 6;
+    if (left + pickerW > window.innerWidth - 8) left = window.innerWidth - pickerW - 8;
+    if (left < 8) left = 8;
+    if (top < 8) top = rect.bottom + 6;
+    setPickerPos({ top, left });
+    setShowEmojiPicker(true);
   }, [showEmojiPicker]);
 
   const handleChange = useCallback(
@@ -214,32 +235,36 @@ export default function MessageInput({
       )}>
         {/* Left actions */}
         <div className="flex items-center gap-0.5 flex-shrink-0">
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setShowEmojiPicker((s) => !s)}
-              className={cn(
-                'p-1.5 rounded transition-colors',
-                showEmojiPicker
-                  ? 'text-indigo-400 bg-indigo-500/10'
-                  : 'text-text-muted hover:text-text-primary hover:bg-white/5',
-              )}
-              title="Emoji"
-            >
-              <Smile className="w-4 h-4" />
-            </button>
-            {showEmojiPicker && (
-              <div ref={emojiPickerRef} className="absolute bottom-full left-0 mb-2 z-50 shadow-2xl">
-                <Picker
-                  data={data}
-                  onEmojiSelect={insertEmoji}
-                  theme="dark"
-                  previewPosition="none"
-                  skinTonePosition="none"
-                />
-              </div>
+          <button
+            ref={emojiButtonRef}
+            type="button"
+            onClick={openEmojiPicker}
+            className={cn(
+              'p-1.5 rounded transition-colors',
+              showEmojiPicker
+                ? 'text-indigo-400 bg-indigo-500/10'
+                : 'text-text-muted hover:text-text-primary hover:bg-white/5',
             )}
-          </div>
+            title="Emoji"
+          >
+            <Smile className="w-4 h-4" />
+          </button>
+          {showEmojiPicker && createPortal(
+            <div
+              ref={emojiPickerRef}
+              style={{ position: 'fixed', top: pickerPos.top, left: pickerPos.left, zIndex: 9999 }}
+              className="shadow-2xl animate-scale-in"
+            >
+              <Picker
+                data={data}
+                onEmojiSelect={insertEmoji}
+                theme="dark"
+                previewPosition="none"
+                skinTonePosition="none"
+              />
+            </div>,
+            document.body,
+          )}
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
@@ -287,9 +312,9 @@ export default function MessageInput({
             onClick={handleSend}
             disabled={!canSend || disabled}
             className={cn(
-              'p-1.5 rounded transition-colors',
+              'p-1.5 rounded transition-all',
               canSend
-                ? 'text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/10'
+                ? 'text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/10 active:scale-90'
                 : 'text-text-muted cursor-not-allowed',
             )}
           >

@@ -62,15 +62,36 @@ export default {
         xl: '14px',
       },
       animation: {
-        'fade-in': 'fadeIn 0.15s ease-out',
-        'slide-up': 'slideUp 0.2s ease-out',
-        'pulse-slow': 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        'fade-in':      'fadeIn 0.15s ease-out',
+        'slide-up':     'slideUp 0.2s ease-out',
+        'pulse-slow':   'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        'message-in':   'messageIn 0.2s ease-out',
+        'scale-in':     'scaleIn 0.15s ease-out',
+        'badge-pop':    'badgePop 0.25s cubic-bezier(0.34,1.56,0.64,1)',
+        'reaction-pop': 'reactionPop 0.2s cubic-bezier(0.34,1.56,0.64,1)',
       },
       keyframes: {
-        fadeIn: { from: { opacity: '0' }, to: { opacity: '1' } },
+        fadeIn:  { from: { opacity: '0' }, to: { opacity: '1' } },
         slideUp: {
           from: { transform: 'translateY(6px)', opacity: '0' },
-          to: { transform: 'translateY(0)', opacity: '1' },
+          to:   { transform: 'translateY(0)',   opacity: '1' },
+        },
+        messageIn: {
+          from: { transform: 'translateY(10px)', opacity: '0' },
+          to:   { transform: 'translateY(0)',    opacity: '1' },
+        },
+        scaleIn: {
+          from: { transform: 'scale(0.92)', opacity: '0' },
+          to:   { transform: 'scale(1)',    opacity: '1' },
+        },
+        badgePop: {
+          from: { transform: 'scale(0)' },
+          to:   { transform: 'scale(1)' },
+        },
+        reactionPop: {
+          '0%':   { transform: 'scale(1)' },
+          '50%':  { transform: 'scale(1.4)' },
+          '100%': { transform: 'scale(1)' },
         },
       },
     },

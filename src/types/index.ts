@@ -1,4 +1,32 @@
 export type UserStatus = 'ONLINE' | 'AWAY' | 'OFFLINE';
+export type WorkspaceRole = 'OWNER' | 'ADMIN' | 'MEMBER';
+
+export interface Workspace {
+  id: string;
+  name: string;
+  slug: string;
+  ownerId: string;
+  createdAt: string;
+  role?: WorkspaceRole;
+  _count?: { members: number };
+}
+
+export interface WorkspaceMember {
+  workspaceId: string;
+  userId: string;
+  role: WorkspaceRole;
+  joinedAt: string;
+  user: Pick<User, 'id' | 'username' | 'displayName' | 'avatarUrl' | 'status'>;
+}
+
+export interface WorkspaceInvite {
+  id: string;
+  token: string;
+  email?: string;
+  expiresAt?: string;
+  createdAt: string;
+  createdBy?: { id: string; displayName: string };
+}
 export type ChannelType = 'PUBLIC' | 'PRIVATE';
 export type MemberRole = 'OWNER' | 'ADMIN' | 'MEMBER';
 
@@ -16,6 +44,7 @@ export interface Channel {
   name: string;
   description?: string;
   type: ChannelType;
+  unreadCount?: number;
   _count?: { members: number };
   members?: ChannelMember[];
 }
@@ -63,14 +92,24 @@ export interface Message {
   _pending?: boolean; // optimistic flag
 }
 
+export interface DMReplyTo {
+  id: string;
+  content: string;
+  sender: { id: string; displayName: string };
+}
+
 export interface DirectMessage {
   id: string;
   content: string;
   createdAt: string;
+  editedAt?: string;
   isRead: boolean;
   senderId: string;
   receiverId: string;
+  replyToId?: string;
+  replyTo?: DMReplyTo;
   sender: MessageUser;
+  reactions: Reaction[];
 }
 
 export interface TypingUser {

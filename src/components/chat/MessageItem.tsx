@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Pencil, Trash2, MessageSquare, Bot, Check, X, SmilePlus, FileText, Download } from 'lucide-react';
+import Picker from '@emoji-mart/react';
+import data from '@emoji-mart/data';
 import { cn, formatMessageTime, groupReactions } from '@/lib/utils';
 import { Message, Attachment } from '@/types';
 import Avatar from '@/components/shared/Avatar';
 import { useAuth } from '@/contexts/AuthContext';
 
-const EMOJI_OPTIONS = ['👍', '❤️', '😂', '🔥', '✅', '👀'];
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 function formatBytes(bytes: number) {
@@ -49,8 +51,16 @@ function AttachmentItem({ attachment, isOwn }: { attachment: Attachment; isOwn: 
   );
 }
 
+interface Reader {
+  id: string;
+  displayName: string;
+  avatarUrl?: string;
+}
+
 interface MessageItemProps {
   message: Message;
+  readers?: Reader[];
+  isNew?: boolean;
   onReact: (messageId: string, emoji: string) => void;
   onEdit: (messageId: string, content: string) => void;
   onDelete: (messageId: string) => void;
@@ -61,6 +71,8 @@ interface MessageItemProps {
 
 export default function MessageItem({
   message,
+  readers = [],
+  isNew = false,
   onReact,
   onEdit,
   onDelete,
@@ -76,7 +88,39 @@ export default function MessageItem({
   const [editContent, setEditContent] = useState(message.content);
   const [hovered, setHovered] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [pickerPos, setPickerPos] = useState({ top: 0, left: 0 });
   const editRef = useRef<HTMLTextAreaElement>(null);
+  const emojiButtonRef = useRef<HTMLButtonElement>(null);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (
+        emojiPickerRef.current &&
+        !emojiPickerRef.current.contains(e.target as Node) &&
+        !emojiButtonRef.current?.contains(e.target as Node)
+      ) {
+        setShowEmojiPicker(false);
+      }
+    };
+    if (showEmojiPicker) document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showEmojiPicker]);
+
+  const openEmojiPicker = () => {
+    if (showEmojiPicker) { setShowEmojiPicker(false); return; }
+    if (!emojiButtonRef.current) return;
+    const rect = emojiButtonRef.current.getBoundingClientRect();
+    const pickerW = 352;
+    const pickerH = 440;
+    let left = rect.left;
+    let top = rect.bottom + 6;
+    if (left + pickerW > window.innerWidth - 8) left = window.innerWidth - pickerW - 8;
+    if (left < 8) left = 8;
+    if (top + pickerH > window.innerHeight - 8) top = rect.top - pickerH - 6;
+    setPickerPos({ top, left });
+    setShowEmojiPicker(true);
+  };
 
   useEffect(() => {
     if (editing && editRef.current) {
@@ -96,7 +140,7 @@ export default function MessageItem({
   // ── AI messages keep the special cyan style ──────────────────────────────
   if (isAI) {
     return (
-      <div className="group relative px-4 py-1 bg-cyan-500/5 hover:bg-cyan-500/[0.08] border-l-2 border-cyan-500/30 pl-3 transition-colors">
+      <div className={cn('group relative px-4 py-1 bg-cyan-500/5 hover:bg-cyan-500/[0.08] border-l-2 border-cyan-500/30 pl-3 transition-colors', isNew && 'animate-message-in')}>
         <div className="flex gap-3">
           <div className="flex-shrink-0 pt-0.5">
             <div className="w-8 h-8 rounded-full bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center">
@@ -118,9 +162,9 @@ export default function MessageItem({
   // ── Regular messages: bubble style ───────────────────────────────────────
   return (
     <div
-      className={cn('group relative px-4 py-1 transition-colors hover:bg-white/[0.02]', isPending && 'opacity-70')}
+      className={cn('group relative px-4 py-1 transition-colors hover:bg-white/[0.02]', isPending && 'opacity-70', isNew && 'animate-message-in')}
       onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => { setHovered(false); setShowEmojiPicker(false); }}
+      onMouseLeave={() => { if (!showEmojiPicker) setHovered(false); }}
     >
       <div className={cn('flex gap-2.5', isOwn && 'flex-row-reverse')}>
         {/* Avatar — only for other people */}
@@ -189,7 +233,7 @@ export default function MessageItem({
                   key={emoji}
                   onClick={() => onReact(message.id, emoji)}
                   className={cn(
-                    'flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs transition-colors',
+                    'flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs transition-colors active:animate-reaction-pop',
                     users.includes(user?.id || '')
                       ? 'bg-indigo-600/20 border-indigo-500/40 text-indigo-300'
                       : 'bg-white/5 border-border text-text-secondary hover:border-white/20',
@@ -198,6 +242,26 @@ export default function MessageItem({
                   {emoji} <span>{count}</span>
                 </button>
               ))}
+            </div>
+          )}
+
+          {/* Seen-by avatars (own messages only) */}
+          {readers.length > 0 && (
+            <div className={cn('flex items-center gap-0.5 mt-1', isOwn && 'justify-end')}>
+              {readers.slice(0, 4).map((r) => (
+                <div key={r.id} title={r.displayName} className="w-3.5 h-3.5 rounded-full overflow-hidden flex-shrink-0 ring-1 ring-base-900">
+                  {r.avatarUrl ? (
+                    <img src={r.avatarUrl} alt={r.displayName} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-indigo-500/60 flex items-center justify-center text-[7px] font-bold text-white">
+                      {r.displayName[0].toUpperCase()}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {readers.length > 4 && (
+                <span className="text-[9px] text-text-muted ml-0.5">+{readers.length - 4}</span>
+              )}
             </div>
           )}
 
@@ -220,34 +284,39 @@ export default function MessageItem({
         </div>
 
         {/* Hover toolbar — flips sides for own messages */}
-        {hovered && !editing && !isPending && (
+        {(hovered || showEmojiPicker) && !editing && !isPending && (
           <div className={cn(
             'absolute top-0 flex items-center gap-0.5 bg-base-800 border border-border rounded-lg p-0.5 shadow-lg animate-fade-in z-10',
             isOwn ? 'left-4' : 'right-4',
           )}>
             {/* Emoji picker */}
-            <div className="relative">
-              <button
-                onClick={() => setShowEmojiPicker((s) => !s)}
-                title="React"
-                className="p-1.5 rounded hover:bg-white/8 text-text-muted hover:text-text-primary transition-colors"
+            <button
+              ref={emojiButtonRef}
+              onClick={openEmojiPicker}
+              title="React"
+              className="p-1.5 rounded hover:bg-white/8 text-text-muted hover:text-text-primary transition-colors"
+            >
+              <SmilePlus className="w-4 h-4" />
+            </button>
+            {showEmojiPicker && createPortal(
+              <div
+                ref={emojiPickerRef}
+                style={{ position: 'fixed', top: pickerPos.top, left: pickerPos.left, zIndex: 9999 }}
+                className="shadow-2xl animate-scale-in"
               >
-                <SmilePlus className="w-4 h-4" />
-              </button>
-              {showEmojiPicker && (
-                <div className={cn('absolute top-full mt-1 bg-base-800 border border-border rounded-lg p-1.5 flex gap-1 shadow-xl z-20', isOwn ? 'right-0' : 'left-0')}>
-                  {EMOJI_OPTIONS.map((e) => (
-                    <button
-                      key={e}
-                      onClick={() => { onReact(message.id, e); setShowEmojiPicker(false); }}
-                      className="w-7 h-7 rounded hover:bg-white/10 flex items-center justify-center text-sm transition-colors"
-                    >
-                      {e}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+                <Picker
+                  data={data}
+                  onEmojiSelect={(emoji: any) => {
+                    onReact(message.id, emoji.native);
+                    setShowEmojiPicker(false);
+                  }}
+                  theme="dark"
+                  previewPosition="none"
+                  skinTonePosition="none"
+                />
+              </div>,
+              document.body,
+            )}
 
             {/* Reply in thread */}
             {!isThreadReply && (
