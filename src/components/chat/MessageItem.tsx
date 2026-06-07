@@ -81,6 +81,17 @@ export default function MessageItem({
   hasUnreadReplies = false,
 }: MessageItemProps) {
   const { user } = useAuth();
+
+  if (message.isSystem) {
+    return (
+      <div className="flex items-center gap-3 px-4 py-1.5 select-none">
+        <div className="flex-1 h-px bg-border" />
+        <p className="text-[11px] text-text-muted flex-shrink-0">{message.content}</p>
+        <div className="flex-1 h-px bg-border" />
+      </div>
+    );
+  }
+
   const isOwn = message.user.id === user?.id;
   const isAI = message.isAI;
   const isPending = message._pending;

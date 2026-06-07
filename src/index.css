@@ -6,6 +6,8 @@
   :root {
     --scrollbar-thumb: rgba(255, 255, 255, 0.12);
     --scrollbar-track: transparent;
+    --app-height: 100vh;
+    --app-top: 0px;
   }
 
   * {
@@ -29,11 +31,23 @@
 
   html {
     @apply bg-base-950 text-text-primary antialiased;
+    height: -webkit-fill-available;
   }
 
   body {
     @apply bg-base-950 text-text-primary font-sans;
     -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+    min-height: -webkit-fill-available;
+    overscroll-behavior-y: none;
+    touch-action: manipulation;
+  }
+
+  /* Prevent iOS Safari from zooming in when an input is focused */
+  @media screen and (max-width: 768px) {
+    input, textarea, select {
+      font-size: 16px !important;
+    }
   }
 }
 

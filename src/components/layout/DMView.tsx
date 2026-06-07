@@ -262,12 +262,19 @@ export default function DMView({ partner, onOpenSidebar }: DMViewProps) {
   const wsId = currentWorkspace?.id ?? '';
   const [messages, setMessages] = useState<DirectMessage[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
   const [input, setInput] = useState('');
   const [replyingTo, setReplyingTo] = useState<DirectMessage | null>(null);
   const [highlightedMsgId, setHighlightedMsgId] = useState<string | null>(null);
+  const [scrollTrigger, setScrollTrigger] = useState(0);
   const initialCountRef = useRef(0);
+  const oldestMsgIdRef = useRef<string | null>(null);
   const [partnerStatus, setPartnerStatus] = useState(partner.status);
   const inputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const socket = getSocket();
 
   const scrollToMessage = useCallback((msgId: string) => {
     const el = document.getElementById(`dm-msg-${msgId}`);
@@ -276,23 +283,80 @@ export default function DMView({ partner, onOpenSidebar }: DMViewProps) {
     setHighlightedMsgId(msgId);
     setTimeout(() => setHighlightedMsgId(null), 1500);
   }, []);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const socket = getSocket();
 
   useEffect(() => {
     setPartnerStatus(partner.status);
     setLoading(true);
     setMessages([]);
+    setHasMore(false);
+    oldestMsgIdRef.current = null;
+
     api.get(`/workspaces/${wsId}/dms/${partner.id}`).then((data: any) => {
       const list = (data || []).map((m: any) => ({ ...m, reactions: m.reactions ?? [] }));
       setMessages(list);
       initialCountRef.current = list.length;
+      setHasMore(list.length >= 50);
+      oldestMsgIdRef.current = list[0]?.id ?? null;
       setLoading(false);
     }).catch(() => setLoading(false));
 
-    // Mark partner's messages as read; notifies them in real-time
     socket.emit('dm:mark_read', { partnerId: partner.id });
   }, [partner.id]);
+
+  // Scroll to bottom after initial load and on new appended messages
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'instant' as ScrollBehavior });
+  }, [scrollTrigger]);
+
+  useEffect(() => {
+    if (!loading) setScrollTrigger((t) => t + 1);
+  }, [loading]);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore || !oldestMsgIdRef.current) return;
+    setLoadingMore(true);
+
+    const container = containerRef.current;
+    const prevScrollHeight = container?.scrollHeight ?? 0;
+    const prevScrollTop = container?.scrollTop ?? 0;
+
+    try {
+      const data: any = await api.get(
+        `/workspaces/${wsId}/dms/${partner.id}?before=${oldestMsgIdRef.current}`,
+      );
+      const older = (data || []).map((m: any) => ({ ...m, reactions: m.reactions ?? [] }));
+
+      if (older.length === 0) {
+        setHasMore(false);
+      } else {
+        oldestMsgIdRef.current = older[0].id;
+        setHasMore(older.length >= 50);
+        initialCountRef.current += older.length;
+        setMessages((prev) => [...older, ...prev]);
+
+        requestAnimationFrame(() => {
+          if (container) {
+            container.scrollTop = prevScrollTop + (container.scrollHeight - prevScrollHeight);
+          }
+        });
+      }
+    } catch {
+      // ignore
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore, hasMore, partner.id, wsId]);
+
+  // Trigger loadMore when user scrolls near the top
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const onScroll = () => {
+      if (container.scrollTop < 200) loadMore();
+    };
+    container.addEventListener('scroll', onScroll, { passive: true });
+    return () => container.removeEventListener('scroll', onScroll);
+  }, [loadMore]);
 
   // Re-mark as read when new messages arrive while the conversation is open
   const lastMsgId = messages[messages.length - 1]?.id;
@@ -313,10 +377,6 @@ export default function DMView({ partner, onOpenSidebar }: DMViewProps) {
   }, [partner.id]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length]);
-
-  useEffect(() => {
     const onNew = (dm: DirectMessage) => {
       const isRelevant =
         (dm.senderId === user?.id && dm.receiverId === partner.id) ||
@@ -334,6 +394,7 @@ export default function DMView({ partner, onOpenSidebar }: DMViewProps) {
         if (prev.some((m) => m.id === dm.id)) return prev;
         return [...prev, { ...dm, reactions: dm.reactions ?? [] }];
       });
+      setScrollTrigger((t) => t + 1);
     };
 
     const onUpdated = (dm: DirectMessage) => {
@@ -349,7 +410,6 @@ export default function DMView({ partner, onOpenSidebar }: DMViewProps) {
     };
 
     const onRead = ({ senderId }: { senderId: string }) => {
-      // When the partner reads our messages, mark them as read in local state
       setMessages((prev) =>
         prev.map((m) => m.senderId === senderId ? { ...m, isRead: true } : m),
       );
@@ -391,6 +451,7 @@ export default function DMView({ partner, onOpenSidebar }: DMViewProps) {
       reactions: [],
     };
     setMessages((prev) => [...prev, optimistic]);
+    setScrollTrigger((t) => t + 1);
     setInput('');
     setReplyingTo(null);
     socket.emit('dm:send', { receiverId: partner.id, content: trimmed, replyToId: replyingTo?.id });
@@ -426,7 +487,12 @@ export default function DMView({ partner, onOpenSidebar }: DMViewProps) {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto py-2 space-y-0.5">
+      <div ref={containerRef} className="flex-1 overflow-y-auto py-2 space-y-0.5">
+        {loadingMore && (
+          <div className="flex justify-center py-2">
+            <Loader2 className="w-4 h-4 animate-spin text-text-muted" />
+          </div>
+        )}
         {loading ? (
           <div className="flex items-center justify-center h-32">
             <Loader2 className="w-5 h-5 animate-spin text-text-muted" />
@@ -438,7 +504,6 @@ export default function DMView({ partner, onOpenSidebar }: DMViewProps) {
             <p className="text-xs">This is the beginning of your conversation.</p>
           </div>
         ) : (() => {
-            // Find the last own read message, then hide avatar if partner replied after it
             const lastReadMsg = messages
               .filter((m) => m.senderId === user?.id && !m.id.startsWith('pending-') && m.isRead)
               .at(-1);
@@ -451,22 +516,22 @@ export default function DMView({ partner, onOpenSidebar }: DMViewProps) {
             const lastReadId = lastReadMsg && !partnerRepliedAfter ? lastReadMsg.id : null;
 
             return messages.map((msg, idx) => (
-            <DMItem
-              key={msg.id}
-              msg={msg}
-              isOwn={msg.senderId === user?.id}
-              isHighlighted={highlightedMsgId === msg.id}
-              isLastRead={msg.id === lastReadId}
-              isNew={idx >= initialCountRef.current}
-              currentUserId={user?.id ?? ''}
-              partnerId={partner.id}
-              partner={partner}
-              onEdit={handleEdit}
-              onDelete={handleDelete}
-              onReact={handleReact}
-              onReply={handleReply}
-              onScrollTo={scrollToMessage}
-            />
+              <DMItem
+                key={msg.id}
+                msg={msg}
+                isOwn={msg.senderId === user?.id}
+                isHighlighted={highlightedMsgId === msg.id}
+                isLastRead={msg.id === lastReadId}
+                isNew={idx >= initialCountRef.current}
+                currentUserId={user?.id ?? ''}
+                partnerId={partner.id}
+                partner={partner}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+                onReact={handleReact}
+                onReply={handleReply}
+                onScrollTo={scrollToMessage}
+              />
             ));
           })()}
         <div ref={bottomRef} />

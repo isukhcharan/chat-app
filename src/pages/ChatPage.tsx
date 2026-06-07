@@ -49,7 +49,16 @@ export default function ChatPage() {
   if (!currentWorkspace) return null;
 
   return (
-    <div className="flex h-screen bg-base-950 overflow-hidden">
+    <div
+      className="flex bg-base-950 overflow-hidden"
+      style={{
+        position: 'fixed',
+        top: 'var(--app-top, 0px)',
+        left: 0,
+        right: 0,
+        height: 'var(--app-height, 100vh)',
+      }}
+    >
       <Sidebar
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}

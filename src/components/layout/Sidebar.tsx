@@ -11,6 +11,7 @@ import {
   Settings,
   Check,
   UserPlus,
+  X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
@@ -48,6 +49,8 @@ export default function Sidebar({
   const [showWorkspacePicker, setShowWorkspacePicker] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newChannelName, setNewChannelName] = useState('');
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+  const [memberSearch, setMemberSearch] = useState('');
   const [creating, setCreating] = useState(false);
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
   const [onlineStatus, setOnlineStatus] = useState<Record<string, UserStatus>>({});
@@ -61,6 +64,7 @@ export default function Sidebar({
 
   const activeChannelIdRef = useRef(activeChannelId);
   const activeDMUserIdRef = useRef(activeDMUserId);
+  const memberInputRef = useRef<HTMLInputElement>(null);
   useLayoutEffect(() => { activeChannelIdRef.current = activeChannelId; }, [activeChannelId]);
   useLayoutEffect(() => { activeDMUserIdRef.current = activeDMUserId; }, [activeDMUserId]);
 
@@ -139,21 +143,36 @@ export default function Sidebar({
     return () => { socket.off('user:status', onStatus); };
   }, [socket]);
 
+  const toggleMember = useCallback((memberId: string) => {
+    setSelectedMemberIds((prev) =>
+      prev.includes(memberId) ? prev.filter((id) => id !== memberId) : [...prev, memberId],
+    );
+  }, []);
+
+  const closeCreateModal = useCallback(() => {
+    setShowCreateModal(false);
+    setNewChannelName('');
+    setSelectedMemberIds([]);
+    setMemberSearch('');
+  }, []);
+
   const handleCreateChannel = useCallback(async () => {
     if (!newChannelName.trim() || !currentWorkspace) return;
     setCreating(true);
     try {
       const channel: any = await api.post(
         `/workspaces/${currentWorkspace.id}/channels`,
-        { name: newChannelName.trim() },
+        {
+          name: newChannelName.trim(),
+          ...(selectedMemberIds.length > 0 ? { memberIds: selectedMemberIds } : {}),
+        },
       );
       onChannelsUpdate([...channels, channel]);
       onSelectChannel(channel);
-      setNewChannelName('');
-      setShowCreateModal(false);
+      closeCreateModal();
     } catch {}
     setCreating(false);
-  }, [newChannelName, channels, currentWorkspace, onChannelsUpdate, onSelectChannel]);
+  }, [newChannelName, selectedMemberIds, channels, currentWorkspace, onChannelsUpdate, onSelectChannel, closeCreateModal]);
 
   const handleGenerateInvite = async () => {
     if (!currentWorkspace) return;
@@ -409,8 +428,10 @@ export default function Sidebar({
         {/* Create channel modal */}
         {showCreateModal && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-base-800 border border-border rounded-xl p-5 w-full max-w-xs animate-scale-in">
+            <div className="bg-base-800 border border-border rounded-xl p-5 w-full max-w-sm animate-scale-in">
               <h2 className="text-sm font-semibold mb-4">Create a channel</h2>
+
+              {/* Channel name */}
               <div className="relative mb-4">
                 <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
                 <input
@@ -424,11 +445,96 @@ export default function Sidebar({
                   onKeyDown={(e) => e.key === 'Enter' && handleCreateChannel()}
                 />
               </div>
+
+              {/* Member picker — @-mention style */}
+              {otherMembers.length > 0 && (() => {
+                const query = memberSearch.startsWith('@') ? memberSearch.slice(1) : memberSearch;
+                const suggestions = otherMembers.filter(
+                  (m) =>
+                    !selectedMemberIds.includes(m.userId) &&
+                    (query === '' ||
+                      m.user.displayName.toLowerCase().includes(query.toLowerCase()) ||
+                      m.user.username.toLowerCase().includes(query.toLowerCase())),
+                );
+                const showDropdown = memberSearch.length > 0 && suggestions.length > 0;
+
+                return (
+                  <div className="mb-4">
+                    <label className="block text-xs font-medium text-text-secondary mb-2">
+                      Add members
+                    </label>
+
+                    {/* Chip + input */}
+                    <div
+                      className="flex flex-wrap gap-1.5 p-2 bg-base-700 border border-border rounded-lg focus-within:border-indigo-500/50 transition-colors cursor-text min-h-[38px]"
+                      onClick={() => memberInputRef.current?.focus()}
+                    >
+                      {selectedMemberIds.map((id) => {
+                        const m = members.find((m) => m.userId === id);
+                        if (!m) return null;
+                        return (
+                          <span
+                            key={id}
+                            className="inline-flex items-center gap-1 bg-indigo-600/25 text-indigo-300 text-xs px-2 py-0.5 rounded-full"
+                          >
+                            {m.user.displayName}
+                            <button
+                              type="button"
+                              onMouseDown={(e) => { e.preventDefault(); toggleMember(id); }}
+                              className="hover:text-white transition-colors"
+                            >
+                              <X className="w-2.5 h-2.5" />
+                            </button>
+                          </span>
+                        );
+                      })}
+                      <input
+                        ref={memberInputRef}
+                        value={memberSearch}
+                        onChange={(e) => setMemberSearch(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Backspace' && memberSearch === '' && selectedMemberIds.length > 0) {
+                            toggleMember(selectedMemberIds[selectedMemberIds.length - 1]);
+                          }
+                        }}
+                        placeholder={selectedMemberIds.length === 0 ? 'Type @ to add members…' : ''}
+                        className="flex-1 bg-transparent text-xs text-text-primary placeholder-text-muted outline-none min-w-[120px]"
+                      />
+                    </div>
+
+                    {/* Dropdown suggestions */}
+                    {showDropdown && (
+                      <div className="mt-1 bg-base-800 border border-border rounded-lg shadow-xl overflow-hidden max-h-40 overflow-y-auto">
+                        {suggestions.map((m) => (
+                          <button
+                            key={m.userId}
+                            type="button"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              toggleMember(m.userId);
+                              setMemberSearch('');
+                              memberInputRef.current?.focus();
+                            }}
+                            className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-white/5 text-xs transition-colors"
+                          >
+                            <Avatar
+                              name={m.user.displayName}
+                              avatarUrl={m.user.avatarUrl}
+                              status={getStatus(m.userId, m.user.status)}
+                              size="xs"
+                            />
+                            <span className="text-text-primary font-medium">{m.user.displayName}</span>
+                            <span className="text-text-muted">@{m.user.username}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
               <div className="flex gap-2">
-                <button
-                  onClick={() => setShowCreateModal(false)}
-                  className="nexus-btn-ghost flex-1"
-                >
+                <button onClick={closeCreateModal} className="nexus-btn-ghost flex-1">
                   Cancel
                 </button>
                 <button

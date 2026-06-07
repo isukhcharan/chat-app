@@ -22,6 +22,9 @@ export default function ChannelView({ channel, onOpenSidebar }: ChannelViewProps
   const wsId = currentWorkspace?.id ?? '';
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [scrollTrigger, setScrollTrigger] = useState(0);
   const [typingUsers, setTypingUsers] = useState<Map<string, TypingUser>>(new Map());
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [aiThinking, setAiThinking] = useState(false);
@@ -31,7 +34,14 @@ export default function ChannelView({ channel, onOpenSidebar }: ChannelViewProps
   const [memberDetails, setMemberDetails] = useState<
     Map<string, { displayName: string; avatarUrl?: string }>
   >(new Map());
+  const [workspaceMembers, setWorkspaceMembers] = useState<
+    { id: string; username: string; displayName: string; avatarUrl?: string | null }[]
+  >([]);
+  const [channelMemberIds, setChannelMemberIds] = useState<Set<string>>(new Set());
+  const [memberCount, setMemberCount] = useState<number>(channel._count?.members ?? 0);
   const initialCountRef = useRef(0);
+  const oldestMsgIdRef = useRef<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const socket = getSocket();
   const pendingIds = useRef<Set<string>>(new Set());
@@ -40,9 +50,12 @@ export default function ChannelView({ channel, onOpenSidebar }: ChannelViewProps
     if (!wsId) return;
     setLoading(true);
     setMessages([]);
+    setHasMore(false);
+    oldestMsgIdRef.current = null;
     setTypingUsers(new Map());
     setSuggestions([]);
     setUnreadThreadIds(new Set());
+    setMemberCount(channel._count?.members ?? 0);
 
     api
       .get(`/workspaces/${wsId}/channels/${channel.id}/messages`)
@@ -50,6 +63,8 @@ export default function ChannelView({ channel, onOpenSidebar }: ChannelViewProps
         const list = data || [];
         setMessages(list);
         initialCountRef.current = list.length;
+        setHasMore(list.length >= 50);
+        oldestMsgIdRef.current = list[0]?.id ?? null;
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -59,7 +74,9 @@ export default function ChannelView({ channel, onOpenSidebar }: ChannelViewProps
       .then((data: any) => {
         const lrMap = new Map<string, string>();
         const detMap = new Map<string, { displayName: string; avatarUrl?: string }>();
+        const memberIds = new Set<string>();
         (data?.members ?? []).forEach((m: any) => {
+          memberIds.add(m.userId);
           if (m.userId === user?.id) return;
           lrMap.set(m.userId, m.lastRead);
           if (m.user)
@@ -70,6 +87,22 @@ export default function ChannelView({ channel, onOpenSidebar }: ChannelViewProps
         });
         setMemberLastRead(lrMap);
         setMemberDetails(detMap);
+        setChannelMemberIds(memberIds);
+      })
+      .catch(() => {});
+
+    api
+      .get(`/workspaces/${wsId}/members`)
+      .then((data: any) => {
+        const list = (data || [])
+          .filter((m: any) => m.userId !== user?.id)
+          .map((m: any) => ({
+            id: m.userId,
+            username: m.user.username,
+            displayName: m.user.displayName,
+            avatarUrl: m.user.avatarUrl,
+          }));
+        setWorkspaceMembers(list);
       })
       .catch(() => {});
 
@@ -86,8 +119,55 @@ export default function ChannelView({ channel, onOpenSidebar }: ChannelViewProps
   }, [lastMsgId, channel.id, wsId]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length]);
+    bottomRef.current?.scrollIntoView({ behavior: 'instant' as ScrollBehavior });
+  }, [scrollTrigger]);
+
+  useEffect(() => {
+    if (!loading) setScrollTrigger((t) => t + 1);
+  }, [loading]);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore || !oldestMsgIdRef.current || !wsId) return;
+    setLoadingMore(true);
+
+    const container = containerRef.current;
+    const prevScrollHeight = container?.scrollHeight ?? 0;
+    const prevScrollTop = container?.scrollTop ?? 0;
+
+    try {
+      const data: any = await api.get(
+        `/workspaces/${wsId}/channels/${channel.id}/messages?cursor=${oldestMsgIdRef.current}`,
+      );
+      const older: Message[] = data || [];
+      if (older.length === 0) {
+        setHasMore(false);
+      } else {
+        oldestMsgIdRef.current = older[0].id;
+        setHasMore(older.length >= 50);
+        initialCountRef.current += older.length;
+        setMessages((prev) => [...older, ...prev]);
+        requestAnimationFrame(() => {
+          if (container) {
+            container.scrollTop = prevScrollTop + (container.scrollHeight - prevScrollHeight);
+          }
+        });
+      }
+    } catch {
+      // ignore
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore, hasMore, channel.id, wsId]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const onScroll = () => {
+      if (container.scrollTop < 200) loadMore();
+    };
+    container.addEventListener('scroll', onScroll, { passive: true });
+    return () => container.removeEventListener('scroll', onScroll);
+  }, [loadMore]);
 
   useEffect(() => {
     if (!wsId) return;
@@ -109,6 +189,7 @@ export default function ChannelView({ channel, onOpenSidebar }: ChannelViewProps
         if (prev.some((m) => m.id === msg.id)) return prev;
         return [...prev, msg];
       });
+      setScrollTrigger((t) => t + 1);
       setSuggestions([]);
     };
 
@@ -186,6 +267,7 @@ export default function ChannelView({ channel, onOpenSidebar }: ChannelViewProps
         if (prev.some((m) => m.id === msg.id)) return prev;
         return [...prev, msg];
       });
+      setScrollTrigger((t) => t + 1);
     };
 
     const onChannelRead = ({
@@ -201,6 +283,18 @@ export default function ChannelView({ channel, onOpenSidebar }: ChannelViewProps
       setMemberLastRead((prev) => new Map(prev).set(userId, lastRead));
     };
 
+    const onMemberAdded = ({
+      channelId: cid,
+      addedUser,
+    }: {
+      channelId: string;
+      addedUser: { id: string };
+    }) => {
+      if (cid !== channel.id) return;
+      setChannelMemberIds((prev) => new Set([...prev, addedUser.id]));
+      setMemberCount((c) => c + 1);
+    };
+
     socket.on('message:new', onNewMessage);
     socket.on('message:confirmed', onConfirmed);
     socket.on('message:updated', onUpdated);
@@ -211,6 +305,7 @@ export default function ChannelView({ channel, onOpenSidebar }: ChannelViewProps
     socket.on('ai:thinking', onAIThinking);
     socket.on('ai:thinking_done', onAIThinkingDone);
     socket.on('channel:read', onChannelRead);
+    socket.on('channel:member_added', onMemberAdded);
 
     return () => {
       socket.off('message:new', onNewMessage);
@@ -223,8 +318,16 @@ export default function ChannelView({ channel, onOpenSidebar }: ChannelViewProps
       socket.off('ai:thinking', onAIThinking);
       socket.off('ai:thinking_done', onAIThinkingDone);
       socket.off('channel:read', onChannelRead);
+      socket.off('channel:member_added', onMemberAdded);
     };
   }, [channel.id, user?.id, wsId]);
+
+  const handleAddMember = useCallback(
+    async (userId: string) => {
+      socket.emit('channel:add_member', { channelId: channel.id, workspaceId: wsId, userId });
+    },
+    [channel.id, wsId],
+  );
 
   const handleSend = useCallback(
     (content: string, attachments?: Attachment[]) => {
@@ -249,6 +352,7 @@ export default function ChannelView({ channel, onOpenSidebar }: ChannelViewProps
         _pending: true,
       };
       setMessages((prev) => [...prev, optimistic]);
+      setScrollTrigger((t) => t + 1);
       socket.emit('message:send', {
         channelId: channel.id,
         workspaceId: wsId,
@@ -375,12 +479,17 @@ export default function ChannelView({ channel, onOpenSidebar }: ChannelViewProps
           </div>
           <div className="flex items-center gap-1 text-xs text-text-muted flex-shrink-0">
             <Users className="w-3.5 h-3.5" />
-            {channel._count?.members ?? '—'}
+            {memberCount || '—'}
           </div>
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto py-2 space-y-0.5">
+        <div ref={containerRef} className="flex-1 overflow-y-auto py-2 space-y-0.5">
+          {loadingMore && (
+            <div className="flex justify-center py-2">
+              <Loader2 className="w-4 h-4 animate-spin text-text-muted" />
+            </div>
+          )}
           {loading ? (
             <div className="flex items-center justify-center h-32">
               <Loader2 className="w-5 h-5 animate-spin text-text-muted" />
@@ -431,6 +540,9 @@ export default function ChannelView({ channel, onOpenSidebar }: ChannelViewProps
           onRequestSuggestions={handleRequestSuggestions}
           suggestions={suggestions}
           aiThinking={aiThinking}
+          members={workspaceMembers}
+          channelMemberIds={channelMemberIds}
+          onAddMember={handleAddMember}
         />
       </div>
 

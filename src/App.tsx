@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { WorkspaceProvider, useWorkspace } from '@/contexts/WorkspaceContext';
@@ -63,6 +64,23 @@ function AppRoutes() {
 }
 
 export default function App() {
+  useEffect(() => {
+    const update = () => {
+      const vv = window.visualViewport;
+      const h = vv?.height ?? window.innerHeight;
+      const top = vv?.offsetTop ?? 0;
+      document.documentElement.style.setProperty('--app-height', `${h}px`);
+      document.documentElement.style.setProperty('--app-top', `${top}px`);
+    };
+    update();
+    window.visualViewport?.addEventListener('resize', update);
+    window.visualViewport?.addEventListener('scroll', update);
+    return () => {
+      window.visualViewport?.removeEventListener('resize', update);
+      window.visualViewport?.removeEventListener('scroll', update);
+    };
+  }, []);
+
   return (
     <BrowserRouter>
       <AuthProvider>

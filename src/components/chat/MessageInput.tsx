@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, KeyboardEvent, useEffect } from 'react';
+import { useState, useRef, useCallback, useMemo, KeyboardEvent, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Send, Sparkles, Loader2, Smile, Paperclip, X, FileText, ImageIcon } from 'lucide-react';
 import Picker from '@emoji-mart/react';
@@ -6,6 +6,7 @@ import data from '@emoji-mart/data';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Attachment } from '@/types';
+import Avatar from '@/components/shared/Avatar';
 
 interface PendingFile {
   id: string;
@@ -14,6 +15,13 @@ interface PendingFile {
   url?: string;
   uploading: boolean;
   error?: boolean;
+}
+
+interface MentionMember {
+  id: string;
+  username: string;
+  displayName: string;
+  avatarUrl?: string | null;
 }
 
 interface MessageInputProps {
@@ -25,6 +33,9 @@ interface MessageInputProps {
   suggestions: string[];
   aiThinking: boolean;
   disabled?: boolean;
+  members?: MentionMember[];
+  channelMemberIds?: Set<string>;
+  onAddMember?: (userId: string) => Promise<void>;
 }
 
 function formatBytes(bytes: number) {
@@ -42,11 +53,23 @@ export default function MessageInput({
   suggestions,
   aiThinking,
   disabled,
+  members = [],
+  channelMemberIds,
+  onAddMember,
 }: MessageInputProps) {
   const [value, setValue] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [pickerPos, setPickerPos] = useState({ top: 0, left: 0 });
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionStart, setMentionStart] = useState(0);
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const [pendingAddMember, setPendingAddMember] = useState<{
+    member: MentionMember;
+    atStart: number;
+    query: string;
+  } | null>(null);
+  const [addingMember, setAddingMember] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const emojiButtonRef = useRef<HTMLButtonElement>(null);
@@ -82,9 +105,71 @@ export default function MessageInput({
     setShowEmojiPicker(true);
   }, [showEmojiPicker]);
 
+  const mentionSuggestions = useMemo(() => {
+    if (mentionQuery === null || members.length === 0) return [];
+    const q = mentionQuery.toLowerCase();
+    return members
+      .filter(
+        (m) =>
+          q === '' ||
+          m.displayName.toLowerCase().includes(q) ||
+          m.username.toLowerCase().includes(q),
+      )
+      .slice(0, 8);
+  }, [mentionQuery, members]);
+
+  const doInsertMention = useCallback(
+    (member: MentionMember, atStart: number, query: string) => {
+      const before = value.slice(0, atStart);
+      const after = value.slice(atStart + 1 + query.length);
+      const next = `${before}@${member.username} ${after}`;
+      setValue(next);
+      setTimeout(() => {
+        const pos = before.length + member.username.length + 2;
+        textareaRef.current?.focus();
+        textareaRef.current?.setSelectionRange(pos, pos);
+      }, 0);
+    },
+    [value],
+  );
+
+  const insertMention = useCallback(
+    (member: MentionMember) => {
+      doInsertMention(member, mentionStart, mentionQuery ?? '');
+      setMentionQuery(null);
+    },
+    [doInsertMention, mentionStart, mentionQuery],
+  );
+
+  const pickMember = useCallback(
+    (member: MentionMember) => {
+      const isInChannel = channelMemberIds ? channelMemberIds.has(member.id) : true;
+      if (!isInChannel && onAddMember) {
+        setPendingAddMember({ member, atStart: mentionStart, query: mentionQuery ?? '' });
+        setMentionQuery(null);
+      } else {
+        insertMention(member);
+      }
+    },
+    [channelMemberIds, onAddMember, mentionStart, mentionQuery, insertMention],
+  );
+
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      setValue(e.target.value);
+      const val = e.target.value;
+      setValue(val);
+
+      // Detect @mention trigger
+      const cursor = e.target.selectionStart ?? val.length;
+      const match = val.slice(0, cursor).match(/@(\w*)$/);
+      if (match) {
+        setMentionQuery(match[1]);
+        setMentionStart(match.index!);
+        setMentionIndex(0);
+      } else {
+        setMentionQuery(null);
+      }
+
       onTypingStart();
       clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = setTimeout(onTypingStop, 2000);
@@ -158,6 +243,28 @@ export default function MessageInput({
   }, [value, pendingFiles, onSend, onTypingStop]);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (mentionQuery !== null && mentionSuggestions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setMentionIndex((i) => Math.min(i + 1, mentionSuggestions.length - 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setMentionIndex((i) => Math.max(i - 1, 0));
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        pickMember(mentionSuggestions[mentionIndex]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setMentionQuery(null);
+        return;
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -170,6 +277,102 @@ export default function MessageInput({
 
   return (
     <div className="px-4 py-3 border-t border-border relative">
+      {/* @mention dropdown */}
+      {mentionQuery !== null && mentionSuggestions.length > 0 && (
+        <div className="absolute bottom-full left-4 right-4 mb-2 bg-base-800 border border-border rounded-xl shadow-2xl overflow-hidden z-20">
+          <p className="px-3 pt-2 pb-1 text-[10px] font-semibold text-text-muted uppercase tracking-wider">
+            Members
+          </p>
+          <div className="max-h-52 overflow-y-auto pb-1">
+            {mentionSuggestions.map((m, i) => {
+              const inChannel = channelMemberIds ? channelMemberIds.has(m.id) : true;
+              return (
+                <button
+                  key={m.id}
+                  onMouseDown={(e) => { e.preventDefault(); pickMember(m); }}
+                  className={cn(
+                    'w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors',
+                    i === mentionIndex
+                      ? 'bg-indigo-600/20 text-indigo-300'
+                      : 'hover:bg-white/5 text-text-secondary hover:text-text-primary',
+                  )}
+                >
+                  <Avatar name={m.displayName} avatarUrl={m.avatarUrl ?? undefined} size="xs" />
+                  <span className="font-medium">{m.displayName}</span>
+                  <span className="text-text-muted">@{m.username}</span>
+                  {!inChannel && (
+                    <span className="ml-auto text-[9px] font-medium text-amber-400/80 border border-amber-500/30 rounded px-1 py-0.5 flex-shrink-0">
+                      + invite
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Add-to-channel confirmation popup */}
+      {pendingAddMember && (
+        <div className="absolute bottom-full left-4 right-4 mb-2 bg-base-800 border border-amber-500/30 rounded-xl shadow-2xl p-4 z-20">
+          <div className="flex items-center gap-3 mb-3">
+            <Avatar
+              name={pendingAddMember.member.displayName}
+              avatarUrl={pendingAddMember.member.avatarUrl ?? undefined}
+              size="sm"
+            />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-text-primary truncate">
+                {pendingAddMember.member.displayName}
+              </p>
+              <p className="text-xs text-text-muted">is not in this channel</p>
+            </div>
+          </div>
+          <p className="text-xs text-text-secondary mb-3">
+            Add <span className="font-semibold text-text-primary">@{pendingAddMember.member.username}</span> to the channel before mentioning them?
+          </p>
+          <div className="flex gap-2">
+            <button
+              disabled={addingMember}
+              onMouseDown={async (e) => {
+                e.preventDefault();
+                setAddingMember(true);
+                try {
+                  await onAddMember!(pendingAddMember.member.id);
+                  doInsertMention(pendingAddMember.member, pendingAddMember.atStart, pendingAddMember.query);
+                } finally {
+                  setAddingMember(false);
+                  setPendingAddMember(null);
+                }
+              }}
+              className="flex-1 flex items-center justify-center gap-1.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white text-xs font-medium rounded-lg transition-colors"
+            >
+              {addingMember ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+              Add &amp; mention
+            </button>
+            <button
+              onMouseDown={(e) => {
+                e.preventDefault();
+                doInsertMention(pendingAddMember.member, pendingAddMember.atStart, pendingAddMember.query);
+                setPendingAddMember(null);
+              }}
+              className="flex-1 py-1.5 border border-border hover:bg-white/5 text-text-secondary text-xs font-medium rounded-lg transition-colors"
+            >
+              Just mention
+            </button>
+            <button
+              onMouseDown={(e) => {
+                e.preventDefault();
+                setPendingAddMember(null);
+                textareaRef.current?.focus();
+              }}
+              className="px-3 py-1.5 border border-border hover:bg-white/5 text-text-muted text-xs rounded-lg transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
       {/* Suggestions */}
       {suggestions.length > 0 && (
         <div className="flex gap-1.5 mb-2 flex-wrap">
@@ -323,7 +526,7 @@ export default function MessageInput({
         </div>
       </div>
 
-      <p className="text-[10px] text-text-muted mt-1.5 px-0.5">
+      <p className="hidden sm:block text-[10px] text-text-muted mt-1.5 px-0.5">
         <kbd className="bg-base-600 border border-border rounded px-1 text-[9px]">Enter</kbd> to send ·{' '}
         <kbd className="bg-base-600 border border-border rounded px-1 text-[9px]">Shift+Enter</kbd> for newline
       </p>

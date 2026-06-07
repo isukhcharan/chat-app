@@ -90,6 +90,7 @@ export interface Message {
   attachments?: Attachment[];
   _count: { replies: number };
   _pending?: boolean; // optimistic flag
+  isSystem?: boolean; // system event messages (e.g. member added)
 }
 
 export interface DMReplyTo {
